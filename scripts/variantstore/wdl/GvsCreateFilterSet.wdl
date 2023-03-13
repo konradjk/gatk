@@ -536,8 +536,12 @@ task PopulateFilterSetSites {
     # Not `volatile: true` since there shouldn't be a need to re-run this if there has already been a successful execution.
   }
 
+  File monitoring_script = "gs://gvs_quickstart_storage/cromwell_monitoring_script.sh"
+
   command <<<
     set -eo pipefail
+
+    bash ~{monitoring_script} > monitoring.log &
 
     export GATK_LOCAL_JAR=~{default="/root/gatk.jar" gatk_override}
 
@@ -572,6 +576,7 @@ task PopulateFilterSetSites {
 
   output {
     String status_load_filter_set_sites = read_string("status_load_filter_set_sites")
+    File monitoring_log = "monitoring.log"
   }
 }
 
@@ -591,8 +596,12 @@ task PopulateFilterSetTranches {
     # Not `volatile: true` since there shouldn't be a need to re-run this if there has already been a successful execution.
   }
 
+  File monitoring_script = "gs://gvs_quickstart_storage/cromwell_monitoring_script.sh"
+
   command <<<
     set -eo pipefail
+
+    bash ~{monitoring_script} > monitoring.log &
 
     export GATK_LOCAL_JAR=~{default="/root/gatk.jar" gatk_override}
 
@@ -619,5 +628,6 @@ task PopulateFilterSetTranches {
 
   output {
     String status_load_filter_set_tranches = read_string("status_load_filter_set_tranches")
+    File monitoring_log = "monitoring.log"
   }
 }
