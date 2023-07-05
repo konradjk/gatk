@@ -415,12 +415,12 @@ public final class BigQueryUtils {
         return bytesProcessed;
     }
     public static StorageAPIAvroReaderAndBigQueryStatistics executeQueryWithStorageAPI(final String queryString,
-                                                                  final List<String> fieldsToRetrieve,
-                                                                  final String projectID,
-                                                                  final String datasetID,
-                                                                  final String userDefinedFunctions,
-                                                                  final boolean runQueryInBatchMode,
-                                                                  Map<String, String> labels) {
+                                                                                       final List<String> fieldsToRetrieve,
+                                                                                       final String projectID,
+                                                                                       final String datasetID,
+                                                                                       final String userDefinedFunctions,
+                                                                                       final boolean runQueryInBatchMode,
+                                                                                       Map<String, String> labels) {
         final String tempTableName = String.format("%s_%s", "temp_table", UUID.randomUUID().toString().replace('-', '_'));
         final String tempTableFullyQualified = String.format("%s.%s.%s", projectID, datasetID, tempTableName);
 
