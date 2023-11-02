@@ -41,9 +41,6 @@ def create_snapshot_dataset(args):
             ]
             """
             f.write(schema)
-        info(schema_file)
-        # import time
-        # time.sleep(120)
 
         create_table_cmd = wrap(f"""
 
@@ -67,10 +64,12 @@ def create_snapshot_dataset(args):
 
 
 def build_argument_parser():
-    parser = argparse.ArgumentParser(allow_abbrev=False, description='Build a tag for Variants Docker image')
+    parser = argparse.ArgumentParser(allow_abbrev=False,
+                                     description='Create integration test snapshot metadata dataset and table')
     parser.add_argument('--project', type=str, default='gvs-internal',
                         help='GCP project in which to create the snapshot metadata dataset')
-    parser.add_argument('--dataset-name', type=str, help='Name of the snapshot metadata dataset to create', required=True)
+    parser.add_argument('--dataset-name', type=str, help='Name of the snapshot metadata dataset to create',
+                        required=True)
     return parser
 
 
