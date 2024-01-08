@@ -19,6 +19,7 @@ workflow GvsBulkIngestGenomes {
         # Begin GvsAssignIds
         String dataset_name
         String project_id
+        Boolean samples_are_controls = false
         String? basic_docker
         String? cloud_sdk_docker
         String? variants_docker
@@ -102,7 +103,7 @@ workflow GvsBulkIngestGenomes {
             dataset_name = dataset_name,
             project_id = project_id,
             external_sample_names = SplitBulkImportFofn.sample_name_fofn,
-            samples_are_controls = false,
+            samples_are_controls = samples_are_controls,
             process_vcf_headers = process_vcf_headers,
             cloud_sdk_docker = effective_cloud_sdk_docker,
             use_compressed_references = use_compressed_references
