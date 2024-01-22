@@ -3,6 +3,7 @@ package org.broadinstitute.hellbender.tools.walkers.mutect;
 import htsjdk.variant.variantcontext.Allele;
 import htsjdk.variant.variantcontext.Genotype;
 import htsjdk.variant.variantcontext.VariantContext;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 import org.apache.commons.math3.util.FastMath;
 import org.broadinstitute.hellbender.engine.ReferenceContext;
@@ -198,14 +199,14 @@ public class Mutect3DatasetEngine implements AutoCloseable {
 
         // TODO: for now we don't really need normal reads
         // note that the following use the VC's allele order, not necessarily the likelihoods' allele order
-        final List<List<List<Integer>>> normalReadVectorsByAllele =  FeaturizedReadSets.getReadVectors(vc, normalSamples,
+        final List<List<Pair<List<Integer>, String>>> normalReadVectorsByAllele =  FeaturizedReadSets.getReadVectors(vc, normalSamples,
                 likelihoods, logFragmentLikelihoods, maxRefCount, maxAltCount, mutect3DatasetMode);
-        final List<List<List<Integer>>> tumorReadVectorsByAllele =  FeaturizedReadSets.getReadVectors(vc, tumorSamples,
+        final List<List<Pair<List<Integer>, String>>> tumorReadVectorsByAllele =  FeaturizedReadSets.getReadVectors(vc, tumorSamples,
                 likelihoods, logFragmentLikelihoods, maxRefCount, maxAltCount, altDownsampleMap, mutect3DatasetMode);
 
         // ref and alt reads have already been downsampled by the read featurizer
-        final List<List<Integer>> tumorRefReads = tumorReadVectorsByAllele.get(0);
-        final List<List<Integer>> normalRefReads = normalReadVectorsByAllele.get(0);
+        final List<Pair<List<Integer>, String>> tumorRefReads = tumorReadVectorsByAllele.get(0);
+        final List<Pair<List<Integer>, String>> normalRefReads = normalReadVectorsByAllele.get(0);
 
         final List<LikelihoodMatrix<Fragment,Allele>> tumorMatrices = tumorSamples.stream()
                 .map(s -> logFragmentAlleleLikelihoods.sampleMatrix(logFragmentAlleleLikelihoods.indexOfSample(s)))
@@ -218,8 +219,8 @@ public class Mutect3DatasetEngine implements AutoCloseable {
 
             final String altAllele = vc.getAlternateAllele(n).getBaseString();
             final List<Double> variantFeatureVector = variantFeatures(n, assemblyComplexity, refBases);
-            final List<List<Integer>> tumorAltReads = tumorReadVectorsByAllele.get(n+1);
-            final List<List<Integer>> normalAltReads = normalReadVectorsByAllele.get(n+1);
+            final List<Pair<List<Integer>, String>> tumorAltReads = tumorReadVectorsByAllele.get(n+1);
+            final List<Pair<List<Integer>, String>> normalAltReads = normalReadVectorsByAllele.get(n+1);
 
             printWriter.println(labels.get(n).toString());
             printWriter.printf("%s:%d,%s->%s%n", contig, position, refAllele, altAllele);
@@ -229,8 +230,14 @@ public class Mutect3DatasetEngine implements AutoCloseable {
             // zeroes because we currently don't use normal read vectors
             printWriter.printf("%d %d %d %d%n", tumorRefReads.size(), tumorAltReads.size(), 0, 0);
 
-            tumorRefReads.forEach(r -> printWriter.println(integerString(r)));
-            tumorAltReads.forEach(r -> printWriter.println(integerString(r)));
+            tumorRefReads.forEach(r -> {
+                printWriter.println(integerString(r.getLeft()));
+                printWriter.println(r.getRight());
+            });
+            tumorAltReads.forEach(r -> {
+                printWriter.println(integerString(r.getLeft()));
+                printWriter.println(r.getRight());
+            });
             //normalRefReads.forEach(r -> printWriter.print(numberString(r)));
             //normalAltReads.forEach(r -> printWriter.print(numberString(r)));
             printWriter.printf("%d %d %d %d%n", tumorDepth, tumorADs[n+1], normalDepth, normalADs[n+1]);  // pre-downsampling counts
