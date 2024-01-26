@@ -210,6 +210,7 @@ public class FeaturizedReadSets {
         }
 
         // encode before the variant
+        // TODO: asm.stepForwardOnGenome skips insertions!!!!!
         while (!asm.isRightEdge() && asm.getGenomePosition() < vc.getStart()) {
             int encoding = getEncoding(read, refBases, refOffsetOfReadStart, asm);
             beforeVariant.add(encoding);
