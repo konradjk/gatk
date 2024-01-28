@@ -13,6 +13,7 @@ import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.genotyper.AlleleLikelihoods;
 import org.broadinstitute.hellbender.utils.haplotype.Haplotype;
 import org.broadinstitute.hellbender.utils.locusiterator.AlignmentStateMachine;
+import org.broadinstitute.hellbender.utils.pileup.PileupElement;
 import org.broadinstitute.hellbender.utils.read.AlignmentUtils;
 import org.broadinstitute.hellbender.utils.read.Fragment;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
@@ -199,80 +200,77 @@ public class FeaturizedReadSets {
 
         // this list may be built bigger than it needs to be if there are insertions just before the variant
         final List<Integer> beforeVariant = new ArrayList<>();
-        final List<Integer> result = new ArrayList<>();
+        final List<Integer> afterVariant = new ArrayList<>();
 
         // advance to approximately (lower bound) where the region to encode begins
-        int fwdCnt = 0;
         while (!asm.isRightEdge() && asm.getGenomePosition() + padding < vc.getStart()) {
             asm.stepForwardOnGenome();
-            fwdCnt++;
-            int poo = vc.getStart() - read.getStart() - padding;
         }
 
-        // encode before the variant
-        // TODO: asm.stepForwardOnGenome skips insertions!!!!!
-        while (!asm.isRightEdge() && asm.getGenomePosition() < vc.getStart()) {
-            int encoding = getEncoding(read, refBases, refOffsetOfReadStart, asm);
-            beforeVariant.add(encoding);
+        while (!asm.isRightEdge() && afterVariant.size() <= padding) {
+            final List<Integer> listToGrow = (asm.getGenomePosition() < vc.getStart()) ? beforeVariant : afterVariant;
+
+            final PileupElement pe = asm.makePileupElement();
+            // the stepForwardOnGenome method skips over inserted bases, so we check for them before advancing
+            if (pe.isBeforeInsertion()) {
+                final int insertionLength = pe.getLengthOfImmediatelyFollowingIndel();
+                for (int n = 0; n < insertionLength; n++) {
+
+                    final byte base = read.getBase(asm.getReadOffset() + n + 1);
+                    final byte qual = read.getBaseQuality(asm.getReadOffset() + n + 1);
+                    listToGrow.add(bitsetEncodingOfBase(base) + bitsetEncodingOfBaseQual(qual) + BITSET_INSERTION);
+                }
+            }
+            listToGrow.add(getEncoding(read, refBases, refOffsetOfReadStart, asm));
             asm.stepForwardOnGenome();
         }
 
+        final List<Integer> result = new ArrayList<>();
         // left edge of read within padding window
-        result.addAll(Collections.nCopies(Math.min(padding - beforeVariant.size(), 0), BITSET_PAST_END_OF_READ));
-
+        result.addAll(Collections.nCopies(Math.max(padding - beforeVariant.size(), 0), BITSET_PAST_END_OF_READ));
         result.addAll(beforeVariant.subList(Math.max(beforeVariant.size() - padding, 0), beforeVariant.size()));
+        result.addAll(afterVariant.subList(0, Math.min(afterVariant.size(), padding + 1)));
+        result.addAll(Collections.nCopies(Math.min(padding + 1 - afterVariant.size(), 0), BITSET_PAST_END_OF_READ));
 
-        // encode (padding + 1) bases at and after the variant
-        while (!asm.isRightEdge() && result.size() <= (2 * padding)) {
-            int encoding = getEncoding(read, refBases, refOffsetOfReadStart, asm);
-            result.add(encoding);
-            asm.stepForwardOnGenome();
-        }
-
-        // right edge of read past padding window
-        result.addAll(Collections.nCopies(Math.max(2*padding + 1 - result.size(), 0), BITSET_PAST_END_OF_READ));
+        Utils.validate(result.size() == 2 * padding + 1, () -> "wrong result size");
         final StringBuilder builder = new StringBuilder();
-        result.forEach(n -> builder.append(String.format("%02X", n)));
+        result.forEach(n -> builder.append(String.format("%02X", n)));  // 2 hexadecimal digits with leading zero if relevant
         return builder.toString();
     }
 
     private static int getEncoding(GATKRead read, byte[] refBases, int refOffsetOfReadStart, AlignmentStateMachine asm) {
-        int encoding = 0;
-        final boolean consumesRead = asm.getCigarOperator().consumesReadBases();
-        final boolean consumesRef = asm.getCigarOperator().consumesReferenceBases();
-
-        if (consumesRead) {
+        if (asm.getCigarOperator().consumesReadBases()) {   // match/substitution
             final byte base = read.getBase(asm.getReadOffset());
             final byte qual = read.getBaseQuality(asm.getReadOffset());
-            if (base == 'A') {
-                encoding += BITSET_A;
-            } else if (base == 'C') {
-                encoding += BITSET_C;
-            } else if (base == 'G') {
-                encoding += BITSET_G;
-            } else if (base == 'T') {
-                encoding += BITSET_T;
-            }
+            final byte refBase = refBases[asm.getGenomeOffset() + refOffsetOfReadStart];
 
-            if (consumesRef) {  // match -- check for substitution error
-                final byte refBase = refBases[asm.getGenomeOffset() + refOffsetOfReadStart];
-                if (refBase != base) {
-                    encoding += BITSET_SUBSTITUTION;
-                }
-            } else {    // insertion
-                encoding += BITSET_INSERTION;
-            }
-
-            if (qual < 10) {
-                encoding += BITSET_VERY_LOW_QUAL;
-            } else if (qual < 20) {
-                encoding += BITSET_LOW_QUAL;
-            }
-        } else if (asm.getCigarOperator().consumesReferenceBases()) {   // deletion
-            encoding += BITSET_DELETION;
+            return bitsetEncodingOfBase(base) + bitsetEncodingOfBaseQual(qual) + (refBase == base ? 0 : BITSET_SUBSTITUTION);
+        } else {   // deletion
+            return BITSET_DELETION;
         }
-        return encoding;
     }
 
+    private static int bitsetEncodingOfBaseQual(byte qual) {
+        if (qual > 20) {
+            return 0;
+        } else if (qual > 10) {
+            return BITSET_LOW_QUAL;
+        } else {
+            return BITSET_VERY_LOW_QUAL;
+        }
+    }
 
+    private static int bitsetEncodingOfBase(byte base) {
+        if (base == 'A') {
+            return BITSET_A;
+        } else if (base == 'C') {
+            return BITSET_C;
+        } else if (base == 'G') {
+            return BITSET_G;
+        } else if (base == 'T') {
+            return BITSET_T;
+        } else {
+            return 0;
+        }
+    }
 }
