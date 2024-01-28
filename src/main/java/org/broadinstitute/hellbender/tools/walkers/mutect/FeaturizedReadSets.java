@@ -203,7 +203,7 @@ public class FeaturizedReadSets {
         final List<Integer> afterVariant = new ArrayList<>();
 
         // advance to approximately (lower bound) where the region to encode begins
-        while (!asm.isRightEdge() && asm.getGenomePosition() + padding < vc.getStart()) {
+        while (!asm.isRightEdge() && (asm.getGenomePosition() + padding < vc.getStart() || asm.isLeftEdge())) {
             asm.stepForwardOnGenome();
         }
 
@@ -230,7 +230,7 @@ public class FeaturizedReadSets {
         result.addAll(Collections.nCopies(Math.max(padding - beforeVariant.size(), 0), BITSET_PAST_END_OF_READ));
         result.addAll(beforeVariant.subList(Math.max(beforeVariant.size() - padding, 0), beforeVariant.size()));
         result.addAll(afterVariant.subList(0, Math.min(afterVariant.size(), padding + 1)));
-        result.addAll(Collections.nCopies(Math.min(padding + 1 - afterVariant.size(), 0), BITSET_PAST_END_OF_READ));
+        result.addAll(Collections.nCopies(Math.max(padding + 1 - afterVariant.size(), 0), BITSET_PAST_END_OF_READ));
 
         Utils.validate(result.size() == 2 * padding + 1, () -> "wrong result size");
         final StringBuilder builder = new StringBuilder();
