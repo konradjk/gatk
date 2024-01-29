@@ -146,10 +146,6 @@ public class FeaturizedReadSets {
         final SmithWatermanAlignment readToHaplotypeAlignment = aligner.align(haplotype.getBases(), read.getBases(), SmithWatermanAlignmentConstants.ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS, SWOverhangStrategy.SOFTCLIP);
         final int readStartInHaplotype = readToHaplotypeAlignment.getAlignmentOffset();
 
-        // this is a little confusing because we treat the haplotype as a "read"
-        final int variantStartInHaplotype = ReadUtils.getReadIndexForReferenceCoordinate(haplotype.getStart(),
-                haplotype.getCigar(), vc.getStart()).getLeft();
-
         final GATKRead copy = read.copy();
         copy.setCigar(readToHaplotypeAlignment.getCigar());
         final int mismatchCount = AlignmentUtils.getMismatchCount(copy, haplotype.getBases(), readStartInHaplotype).numMismatches;
@@ -207,7 +203,7 @@ public class FeaturizedReadSets {
             asm.stepForwardOnGenome();
         }
 
-        while (!asm.isRightEdge() && afterVariant.size() <= padding) {
+        while (!asm.isRightEdge() && afterVariant.size() <= padding && (asm.getGenomeOffset() + refOffsetOfReadStart) < refBases.length) {
             final List<Integer> listToGrow = (asm.getGenomePosition() < vc.getStart()) ? beforeVariant : afterVariant;
 
             final PileupElement pe = asm.makePileupElement();
