@@ -108,7 +108,7 @@ workflow GvsExtractAvroFilesForHail {
                 dataset_name = dataset_name,
                 call_set_identifier = call_set_identifier,
                 avro_sibling = OutputPath.out,
-                num_superpartitions = CountSuperpartitions.num_superpartitions,
+                num_superpartitions = 1,
                 shard_index = i,
                 num_shards = scatter_width,
                 variants_docker = effective_variants_docker,
@@ -313,7 +313,6 @@ task ExtractFromSuperpartitionedTables {
                 EXPORT DATA OPTIONS(
                 uri='${avro_prefix}/vets/vet_${str_table_index}/vet_${str_table_index}_*.avro', format='AVRO', compression='SNAPPY') AS
                 SELECT location, v.sample_id, ref, REPLACE(alt,',<NON_REF>','') alt, call_GT as GT, call_AD as AD, call_GQ as GQ, cast(SPLIT(call_pl,',')[OFFSET(0)] as int64) as RGQ,
-                call_PS as PS
                 FROM \`~{project_id}.~{dataset_name}.vet_${str_table_index}\` v
                 INNER JOIN \`~{project_id}.~{dataset_name}.sample_info\` s ON s.sample_id = v.sample_id
                 WHERE withdrawn IS NULL AND

@@ -155,6 +155,8 @@ workflows:
        branches:
          - master
          - ah_var_store
+         - vs_1214_mini_vdses_for_hail
+         - vs_1214_extract_from_delta
        tags:
          - /.*/
    - name: GvsExtractCallset
@@ -333,6 +335,7 @@ workflows:
          branches:
              - master
              - ah_var_store
+             - vs_1214_extract_from_delta
          tags:
              - /.*/
    - name: GvsCallsetStatistics

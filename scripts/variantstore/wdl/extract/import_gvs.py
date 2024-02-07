@@ -2,7 +2,7 @@ import os
 from typing import List, Tuple, Any
 
 import hail as hl
-from hail.vds.combiner.combine import merge_alleles, calculate_new_intervals
+from hail.experimental.vcf_combiner.vcf_combiner import merge_alleles, calculate_new_intervals
 from hail.genetics.reference_genome import reference_genome_type
 from hail.typecheck import typecheck, sequenceof, numeric
 
@@ -177,6 +177,11 @@ def import_gvs(refs: 'List[List[str]]',
         sdict = hl.dict(arr.map(lambda x: (x.sample_id, x.drop('sample_id', *drop))))
         return hl.rbind(sdict, lambda sdict: ids.map(lambda x: sdict.get(x)))
 
+    def add_reference_allele(mt):
+        """Adds the reference allele from a FASTA file."""
+        mt = mt.annotate_rows(ref_allele=mt.locus.sequence_context())
+        return mt
+
     site_path = os.path.join(tmp_dir, 'site_filters.ht')
     vqsr_path = os.path.join(tmp_dir, 'vqsr.ht')
 
@@ -264,6 +269,7 @@ def import_gvs(refs: 'List[List[str]]',
             ref_ht = ref_ht.annotate_globals(col_data=sample_names_lit.map(lambda s: hl.struct(s=s)),
                                              ref_block_max_length=ref_block_max_length)
             ref_mt = ref_ht._unlocalize_entries('entries', 'col_data', col_key=['s'])
+            ref_mt = add_reference_allele(ref_mt)
 
             var_ht = hl.import_avro(var_group)
             var_ht = var_ht.transmute(locus=translate_locus(var_ht.location),

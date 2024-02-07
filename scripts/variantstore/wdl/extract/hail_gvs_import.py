@@ -17,8 +17,8 @@ gcs_re = re.compile("^gs://(?P<bucket_name>[^/]+)/(?P<object_prefix>.*)$")
 def create_vds(argsfn, vds_path, references_path, temp_path, use_classic_vqsr, intermediate_resume_point):
     import hail as hl
     import import_gvs
-    from hail.utils.java import Env
-    from hailtop.fs.router_fs import RouterFS
+    # from hail.utils.java import Env
+    # from hailtop.fs.router_fs import RouterFS
 
     hl.init(tmp_dir=f'{temp_path}/hail_tmp_general')
     hl._set_flags(use_new_shuffle='1')
@@ -51,12 +51,14 @@ def create_vds(argsfn, vds_path, references_path, temp_path, use_classic_vqsr, i
             intermediate_resume_point=intermediate_resume_point
         )
     finally:
-        local_hail_log_path = os.path.realpath(Env.hc()._log)
-        fs = RouterFS()
-        fs.copy(
-            local_hail_log_path,
-            f'{vds_path}.log'
-        )
+        pass
+        # RouterFS doesn't seem to be available on 0.2.98
+        # local_hail_log_path = os.path.realpath(Env.hc()._log)
+        # fs = RouterFS()
+        # fs.copy(
+        #     local_hail_log_path,
+        #     f'{vds_path}.log'
+        # )
 
 
 def gcs_generate_avro_args(bucket, blob_prefix, key):
