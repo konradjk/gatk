@@ -17,9 +17,6 @@ public class ExtractFeaturesBQ {
     private final static String FEATURE_EXTRACT_USER_DEFINED_FUNCTION_MEDIAN =
             "org/broadinstitute/hellbender/tools/gvs/filtering/udf_median.sql";
 
-    private final static String VQSR_TRAINING_SITES_TABLE =
-        "broad-dsp-spec-ops.joint_genotyping_ref.vqsr_training_sites_*";
-
     public static String getVQSRFeatureExtractQueryString(final TableReference altAllele, final TableReference sampleList,
                                                           final Long minLocation, final Long maxLocation, final int hqGenotypeGQThreshold, final int hqGenotypeDepthThreshold, final double hqGenotypeABThreshold) {
         String locationStanza =
