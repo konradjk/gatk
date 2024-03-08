@@ -245,16 +245,25 @@ public class FeaturizedReadSets {
                 if (pe.isDeletion()) {
                     result.append('D');
                 } else if (base == refBase) {   // low-qual match
-                    result.append('Q'); // 'Q' for qual
-                    result.append(encodeBaseAndQual(base, qual));
+                    if (qual >= GOOD_BASE_QUAL) {   // this can happen at the variant start
+                        consecutiveHighQualMatches++;
+                    } else {
+                        result.append('Q'); // 'Q' for qual
+                        result.append(encodeBaseAndQual(base, qual));
+                    }
                 } else {    // substitution
                     result.append('X'); // 'Q' for qual
                     result.append(encodeBaseAndQual(base, qual));
                 }
-
             }
 
             asm.stepForwardOnGenome();
+        }
+
+        // emit remaining high qual matches
+        if (consecutiveHighQualMatches > 0) {
+            result.append('M');
+            result.append(consecutiveHighQualMatches);
         }
 
         return result.toString();
