@@ -1,6 +1,7 @@
 package org.broadinstitute.hellbender.tools.walkers.mutect;
 
 
+import htsjdk.samtools.CigarElement;
 import htsjdk.variant.variantcontext.Allele;
 import htsjdk.variant.variantcontext.VariantContext;
 import org.apache.commons.lang3.tuple.Pair;
@@ -39,17 +40,11 @@ public class FeaturizedReadSets {
 
     public static final int PADDING = 10;
 
+    public static final int GOOD_BASE_QUAL = 20;
+
+    public static final int BAD_BASE_QUAL = 10;
+
     private static final SmithWatermanAligner aligner = SmithWatermanAligner.getAligner(SmithWatermanAligner.Implementation.JAVA);
-    public static final int BITSET_A = 0;
-    public static final int BITSET_C = 1;
-    public static final int BITSET_G = 2;
-    public static final int BITSET_T = 3;
-    public static final int BITSET_DELETION = 4;
-    public static final int BITSET_SUBSTITUTION = 8;
-    public static final int BITSET_INSERTION = 16;
-    public static final int BITSET_LOW_QUAL = 32;
-    public static final int BITSET_VERY_LOW_QUAL = 64;
-    public static final int BITSET_PAST_END_OF_READ = 128;
 
     private FeaturizedReadSets() { }
 
@@ -99,6 +94,7 @@ public class FeaturizedReadSets {
     }
 
 
+    // reads are encoded as a vector (List<Integer>) and a string summarized the read near the variant (which Permutect later converts to a tensor)
     private static Pair<List<Integer>, String> featurize(final GATKRead read, final VariantContext vc,
                                                 final Map<GATKRead, Haplotype> bestHaplotypes,
                                                 final M2ArgumentCollection.Mutect3DatasetMode mutect3DatasetMode) {
@@ -195,78 +191,83 @@ public class FeaturizedReadSets {
         final AlignmentStateMachine asm = new AlignmentStateMachine(read);  // starts off the left edge, not on the read
 
         // this list may be built bigger than it needs to be if there are insertions just before the variant
-        final List<Integer> beforeVariant = new ArrayList<>();
-        final List<Integer> afterVariant = new ArrayList<>();
+        final StringBuilder result = new StringBuilder();
 
         // advance to approximately (lower bound) where the region to encode begins
         while (!asm.isRightEdge() && (asm.getGenomePosition() + padding < vc.getStart() || asm.isLeftEdge())) {
             asm.stepForwardOnGenome();
         }
 
-        while (!asm.isRightEdge() && afterVariant.size() <= padding && (asm.getGenomeOffset() + refOffsetOfReadStart) < refBases.length) {
-            final List<Integer> listToGrow = (asm.getGenomePosition() < vc.getStart()) ? beforeVariant : afterVariant;
+        // we are now within a distance padding and ready to grow the encoding string
+
+        // a run of n consecutive high-quality matching bases gets an encoding of Mn eg M22 for 22 quality matches.
+        int consecutiveHighQualMatches = 0;
+        while (!asm.isRightEdge() && (asm.getGenomePosition() <= vc.getStart() + padding) && (asm.getGenomeOffset() + refOffsetOfReadStart) < refBases.length) {
+            final boolean atEventStart = asm.getGenomePosition() == vc.getStart();
 
             final PileupElement pe = asm.makePileupElement();
-            // the stepForwardOnGenome method skips over inserted bases, so we check for them before advancing
-            if (pe.isBeforeInsertion()) {
-                final int insertionLength = pe.getLengthOfImmediatelyFollowingIndel();
-                for (int n = 0; n < insertionLength; n++) {
+            final byte base = pe.getBase();
+            final byte qual = pe.getQual();
+            final byte refBase = refBases[asm.getGenomeOffset() + refOffsetOfReadStart];
 
-                    final byte base = read.getBase(asm.getReadOffset() + n + 1);
-                    final byte qual = read.getBaseQuality(asm.getReadOffset() + n + 1);
-                    listToGrow.add(bitsetEncodingOfBase(base) + bitsetEncodingOfBaseQual(qual) + BITSET_INSERTION);
+            // if nothing notable / bad is going on we just increment the count of consecutive high-quality matching bases
+            if (!pe.isDeletion() && !pe.isAfterInsertion() && base == refBase && qual >= GOOD_BASE_QUAL && !atEventStart) {
+                consecutiveHighQualMatches++;
+            } else {
+                if (consecutiveHighQualMatches > 0) {   // emit the string of consecutive matches preceding this base and restart the count at zero
+                    result.append('M');
+                    result.append(consecutiveHighQualMatches);
+                    consecutiveHighQualMatches = 0;
                 }
+
+                // the stepForwardOnGenome method skips over inserted bases, so we account for those here
+                if (pe.isAfterInsertion()) {
+                    final List<CigarElement> intervening = pe.getBetweenPrevPosition(); // there should only be one element here, the insertion
+                    final int insertionSize = intervening.get(intervening.size() - 1).getLength();
+                    final int readOffsetAtInsertionStart = asm.getReadOffset() - insertionSize;
+
+                    result.append('I');
+                    result.append(insertionSize);
+                    for (int n = 0; n < insertionSize; n++) {
+                        final byte insertedBase = read.getBase(readOffsetAtInsertionStart + n);
+                        final byte insertedQual = read.getBaseQuality(readOffsetAtInsertionStart + n);
+                        result.append(encodeBaseAndQual(insertedBase, insertedQual));
+                    }
+                }
+
+                // add a space before the variant start
+                if (atEventStart) {
+                    result.append(' ');
+                }
+
+                // we could encode deletions by their length eg D5 for a 5-base deletion but this is uncommon enough
+                // (remember, this is wrt the best haplotype, not the reference) that D, DD, DDD etc suffice
+                if (pe.isDeletion()) {
+                    result.append('D');
+                } else if (base == refBase) {   // low-qual match
+                    result.append('Q'); // 'Q' for qual
+                    result.append(encodeBaseAndQual(base, qual));
+                } else {    // substitution
+                    result.append('X'); // 'Q' for qual
+                    result.append(encodeBaseAndQual(base, qual));
+                }
+
             }
-            listToGrow.add(getEncoding(read, refBases, refOffsetOfReadStart, asm));
+
             asm.stepForwardOnGenome();
         }
 
-        final List<Integer> result = new ArrayList<>();
-        // left edge of read within padding window
-        result.addAll(Collections.nCopies(Math.max(padding - beforeVariant.size(), 0), BITSET_PAST_END_OF_READ));
-        result.addAll(beforeVariant.subList(Math.max(beforeVariant.size() - padding, 0), beforeVariant.size()));
-        result.addAll(afterVariant.subList(0, Math.min(afterVariant.size(), padding + 1)));
-        result.addAll(Collections.nCopies(Math.max(padding + 1 - afterVariant.size(), 0), BITSET_PAST_END_OF_READ));
-
-        Utils.validate(result.size() == 2 * padding + 1, () -> "wrong result size");
-        final StringBuilder builder = new StringBuilder();
-        result.forEach(n -> builder.append(String.format("%02X", n)));  // 2 hexadecimal digits with leading zero if relevant
-        return builder.toString();
+        return result.toString();
     }
 
-    private static int getEncoding(GATKRead read, byte[] refBases, int refOffsetOfReadStart, AlignmentStateMachine asm) {
-        if (asm.getCigarOperator().consumesReadBases()) {   // match/substitution
-            final byte base = read.getBase(asm.getReadOffset());
-            final byte qual = read.getBaseQuality(asm.getReadOffset());
-            final byte refBase = refBases[asm.getGenomeOffset() + refOffsetOfReadStart];
 
-            return bitsetEncodingOfBase(base) + bitsetEncodingOfBaseQual(qual) + (refBase == base ? 0 : BITSET_SUBSTITUTION);
-        } else {   // deletion
-            return BITSET_DELETION;
-        }
-    }
-
-    private static int bitsetEncodingOfBaseQual(byte qual) {
-        if (qual > 20) {
-            return 0;
-        } else if (qual > 10) {
-            return BITSET_LOW_QUAL;
-        } else {
-            return BITSET_VERY_LOW_QUAL;
-        }
-    }
-
-    private static int bitsetEncodingOfBase(byte base) {
-        if (base == 'A') {
-            return BITSET_A;
-        } else if (base == 'C') {
-            return BITSET_C;
-        } else if (base == 'G') {
-            return BITSET_G;
-        } else if (base == 'T') {
-            return BITSET_T;
-        } else {
-            return 0;
+    private static char encodeBaseAndQual(final byte base, final byte qual) {
+        if (qual >= GOOD_BASE_QUAL) {
+            return (char) base;
+        } else if (qual < BAD_BASE_QUAL) {
+            return 'N';
+        } else  {
+            return Character.toLowerCase((char) base);
         }
     }
 }
