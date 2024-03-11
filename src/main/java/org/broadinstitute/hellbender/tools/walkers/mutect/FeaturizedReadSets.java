@@ -278,7 +278,7 @@ public class FeaturizedReadSets {
                 .toArray();
 
         // DDD -> D3, MMMM -> M4, QaQc -> Qac, XG -> XG, IAIGIT -> IAGT
-        for (int n = 0; n <= runBounds.length; n++) {
+        for (int n = 0; n < runBounds.length - 1; n++) {
             final Encoding encoding = outputEncodings.get(runBounds[n]).getLeft();
             final int runLength = runBounds[n+1] - runBounds[n];
 
