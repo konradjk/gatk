@@ -4,12 +4,14 @@ package org.broadinstitute.hellbender.tools.walkers.mutect;
 import htsjdk.samtools.CigarElement;
 import htsjdk.variant.variantcontext.Allele;
 import htsjdk.variant.variantcontext.VariantContext;
+import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.broadinstitute.gatk.nativebindings.smithwaterman.SWOverhangStrategy;
 import org.broadinstitute.hellbender.tools.walkers.annotator.BaseQuality;
 import org.broadinstitute.hellbender.tools.walkers.annotator.ReadPosition;
+import org.broadinstitute.hellbender.utils.IndexRange;
 import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.genotyper.AlleleLikelihoods;
 import org.broadinstitute.hellbender.utils.haplotype.Haplotype;
@@ -18,14 +20,13 @@ import org.broadinstitute.hellbender.utils.pileup.PileupElement;
 import org.broadinstitute.hellbender.utils.read.AlignmentUtils;
 import org.broadinstitute.hellbender.utils.read.Fragment;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
-import org.broadinstitute.hellbender.utils.read.ReadUtils;
 import org.broadinstitute.hellbender.utils.smithwaterman.SmithWatermanAligner;
 import org.broadinstitute.hellbender.utils.smithwaterman.SmithWatermanAlignment;
 import org.broadinstitute.hellbender.utils.smithwaterman.SmithWatermanAlignmentConstants;
-import org.broadinstitute.hellbender.utils.variant.GATKVariantContextUtils;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * For each sample and for each allele a list feature vectors of supporting reads
@@ -47,6 +48,21 @@ public class FeaturizedReadSets {
     private static final SmithWatermanAligner aligner = SmithWatermanAligner.getAligner(SmithWatermanAligner.Implementation.JAVA);
 
     private FeaturizedReadSets() { }
+
+    private enum Encoding {
+        MATCH('M'),
+        PAST_END('E'),
+        DELETION('D'),
+        INSERTION('I'),
+        MISMATCH('X'),
+        LOW_QUAL('Q');
+
+        public final Character encoding;
+
+        Encoding( final Character encoding ) {
+            this.encoding = encoding;
+        }
+    }
 
     public static List<List<Pair<List<Integer>, String>>> getReadVectors(final VariantContext vc,
                                                            final Collection<String> samples,
@@ -198,75 +214,81 @@ public class FeaturizedReadSets {
             asm.stepForwardOnGenome();
         }
 
+        final List<Pair<Encoding, Character>> encodings = new ArrayList<>(2 * padding);
+
         // we are now within a distance padding and ready to grow the encoding string
-
-        // a run of n consecutive high-quality matching bases gets an encoding of Mn eg M22 for 22 quality matches.
-        int consecutiveHighQualMatches = 0;
+        // vc.getStart() +/- padding may be an overestimate and the span we need, since when insertions are encoded we need less reference span
+        // thus we may need to trim later
         while (!asm.isRightEdge() && (asm.getGenomePosition() <= vc.getStart() + padding) && (asm.getGenomeOffset() + refOffsetOfReadStart) < refBases.length) {
-            final boolean atEventStart = asm.getGenomePosition() == vc.getStart();
-
             final PileupElement pe = asm.makePileupElement();
             final byte base = pe.getBase();
             final byte qual = pe.getQual();
             final byte refBase = refBases[asm.getGenomeOffset() + refOffsetOfReadStart];
 
-            // if nothing notable / bad is going on we just increment the count of consecutive high-quality matching bases
-            if (!pe.isDeletion() && !pe.isAfterInsertion() && base == refBase && qual >= GOOD_BASE_QUAL && !atEventStart) {
-                consecutiveHighQualMatches++;
-            } else {
-                if (consecutiveHighQualMatches > 0) {   // emit the string of consecutive matches preceding this base and restart the count at zero
-                    result.append('M');
-                    result.append(consecutiveHighQualMatches);
-                    consecutiveHighQualMatches = 0;
-                }
+            // the stepForwardOnGenome method skips over inserted bases, so we account for those here
+            if (pe.isAfterInsertion()) {
+                final List<CigarElement> intervening = pe.getBetweenPrevPosition(); // there should only be one element here, the insertion
+                final int insertionSize = intervening.get(intervening.size() - 1).getLength();
+                final int readOffsetAtInsertionStart = asm.getReadOffset() - insertionSize;
 
-                // the stepForwardOnGenome method skips over inserted bases, so we account for those here
-                if (pe.isAfterInsertion()) {
-                    final List<CigarElement> intervening = pe.getBetweenPrevPosition(); // there should only be one element here, the insertion
-                    final int insertionSize = intervening.get(intervening.size() - 1).getLength();
-                    final int readOffsetAtInsertionStart = asm.getReadOffset() - insertionSize;
-
-                    result.append('I');
-                    result.append(insertionSize);
-                    for (int n = 0; n < insertionSize; n++) {
-                        final byte insertedBase = read.getBase(readOffsetAtInsertionStart + n);
-                        final byte insertedQual = read.getBaseQuality(readOffsetAtInsertionStart + n);
-                        result.append(encodeBaseAndQual(insertedBase, insertedQual));
-                    }
-                }
-
-                // add a space before the variant start
-                if (atEventStart) {
-                    result.append(' ');
-                }
-
-                // we could encode deletions by their length eg D5 for a 5-base deletion but this is uncommon enough
-                // (remember, this is wrt the best haplotype, not the reference) that D, DD, DDD etc suffice
-                if (pe.isDeletion()) {
-                    result.append('D');
-                } else if (base == refBase) {   // low-qual match
-                    if (qual >= GOOD_BASE_QUAL) {   // this can happen at the variant start
-                        consecutiveHighQualMatches++;
-                    } else {
-                        result.append('Q'); // 'Q' for qual
-                        result.append(encodeBaseAndQual(base, qual));
-                    }
-                } else {    // substitution
-                    result.append('X'); // 'Q' for qual
-                    result.append(encodeBaseAndQual(base, qual));
+                for (int n = 0; n < insertionSize; n++) {
+                    final byte insertedBase = read.getBase(readOffsetAtInsertionStart + n);
+                    final byte insertedQual = read.getBaseQuality(readOffsetAtInsertionStart + n);
+                    encodings.add(ImmutablePair.of(Encoding.INSERTION, encodeBaseAndQual(insertedBase, insertedQual)));
                 }
             }
 
-            asm.stepForwardOnGenome();
-        }
+            // at the event start: trim down to exactly padding encodings and pad with PAST_END if necessary
+            if (asm.getGenomePosition() == vc.getStart()) {
+                if (encodings.size() < padding) {   // eg E4 if the read start is 4 bases into the padding region
+                    result.append(Encoding.PAST_END).append(padding - encodings.size());
+                }
+                processEncodings(result, encodings.subList(Math.max(encodings.size() - padding, 0), encodings.size()));
+                encodings.clear();
+            }
 
-        // emit remaining high qual matches
-        if (consecutiveHighQualMatches > 0) {
-            result.append('M');
-            result.append(consecutiveHighQualMatches);
+            if (pe.isDeletion()) {
+                encodings.add(ImmutablePair.of(Encoding.DELETION, ' '));
+            } else if (base == refBase) {   // high-qual or low-qual match
+                final Encoding encoding = qual >= GOOD_BASE_QUAL ? Encoding.MATCH : Encoding.LOW_QUAL;
+                final Character character = qual >= GOOD_BASE_QUAL ? ' ' : encodeBaseAndQual(base, qual);
+                encodings.add(ImmutablePair.of(encoding, character));
+            } else {    // substitution
+                encodings.add(ImmutablePair.of(Encoding.MISMATCH, encodeBaseAndQual(base, qual)));
+            }
+
+            asm.stepForwardOnGenome();
+        } // done getting encodings, now we must process the encodings at and after the variant
+
+        if (asm.getGenomePosition() == vc.getStart()) {
+            // note: padding + 1 comes up because the variant start itself is 1, and after the variant start is padding
+            processEncodings(result, encodings.subList(0, Math.min(encodings.size(), padding + 1)));
+            if (encodings.size() < padding + 1) {   // eg E4 if the read start is 4 bases into the padding region
+                result.append(Encoding.PAST_END).append(padding + 1 - encodings.size());
+            }
         }
 
         return result.toString();
+    }
+
+    private static void processEncodings(final StringBuilder result, final List<Pair<Encoding, Character>> outputEncodings) {
+        // if we have eg MMMDDMMMM this returns {0,3,5,9}, telling us that runs of identical encoding types are [0,3); [3,5); [5,9)
+        final int[] runBounds = IntStream.range(0, outputEncodings.size() + 1)
+                .filter(n -> n == 0 || n == outputEncodings.size() || outputEncodings.get(n).getLeft() != outputEncodings.get(n-1).getLeft())
+                .toArray();
+
+        // DDD -> D3, MMMM -> M4, QaQc -> Qac, XG -> XG, IAIGIT -> IAGT
+        for (int n = 0; n <= runBounds.length; n++) {
+            final Encoding encoding = outputEncodings.get(runBounds[n]).getLeft();
+            final int runLength = runBounds[n+1] - runBounds[n];
+
+            result.append(encoding.encoding);
+            if (encoding == Encoding.MATCH || encoding == Encoding.DELETION) {
+                result.append(runLength);
+            } else {
+                new IndexRange(runBounds[n], runBounds[n+1]).forEach(m -> result.append(outputEncodings.get(m).getRight()));
+            }
+        }
     }
 
 
