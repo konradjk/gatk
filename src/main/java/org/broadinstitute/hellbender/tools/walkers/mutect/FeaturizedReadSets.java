@@ -241,7 +241,7 @@ public class FeaturizedReadSets {
             // at the event start: trim down to exactly padding encodings and pad with PAST_END if necessary
             if (asm.getGenomePosition() == vc.getStart()) {
                 if (encodings.size() < padding) {   // eg E4 if the read start is 4 bases into the padding region
-                    result.append(Encoding.PAST_END).append(padding - encodings.size());
+                    result.append(Encoding.PAST_END.encoding).append(padding - encodings.size());
                 }
                 processEncodings(result, encodings.subList(Math.max(encodings.size() - padding, 0), encodings.size()));
                 encodings.clear();
@@ -260,12 +260,10 @@ public class FeaturizedReadSets {
             asm.stepForwardOnGenome();
         } // done getting encodings, now we must process the encodings at and after the variant
 
-        if (asm.getGenomePosition() == vc.getStart()) {
-            // note: padding + 1 comes up because the variant start itself is 1, and after the variant start is padding
-            processEncodings(result, encodings.subList(0, Math.min(encodings.size(), padding + 1)));
-            if (encodings.size() < padding + 1) {   // eg E4 if the read start is 4 bases into the padding region
-                result.append(Encoding.PAST_END).append(padding + 1 - encodings.size());
-            }
+        // note: padding + 1 comes up because the variant start itself is 1, and after the variant start is padding
+        processEncodings(result, encodings.subList(0, Math.min(encodings.size(), padding + 1)));
+        if (encodings.size() < padding + 1) {   // eg E4 if the read start is 4 bases into the padding region
+            result.append(Encoding.PAST_END.encoding).append(padding + 1 - encodings.size());
         }
 
         return result.toString();
