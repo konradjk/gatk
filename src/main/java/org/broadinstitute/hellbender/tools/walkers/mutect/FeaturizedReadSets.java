@@ -11,6 +11,7 @@ import org.broadinstitute.hellbender.tools.walkers.annotator.ReadPosition;
 import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.genotyper.AlleleLikelihoods;
 import org.broadinstitute.hellbender.utils.haplotype.Haplotype;
+import org.broadinstitute.hellbender.utils.locusiterator.AlignmentStateMachine;
 import org.broadinstitute.hellbender.utils.read.AlignmentUtils;
 import org.broadinstitute.hellbender.utils.read.Fragment;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
@@ -132,6 +133,11 @@ public class FeaturizedReadSets {
 
             final long indelsVsBestHaplotype = readToHaplotypeAlignment.getCigar().getCigarElements().stream().filter(el -> el.getOperator().isIndel()).count();
             result.add((int) indelsVsBestHaplotype);
+
+            final AlignmentStateMachine asm = new AlignmentStateMachine(copy);
+            while (!asm.isRightEdge()) {
+                asm.stepForwardOnGenome()
+            }
         }
         Utils.validate(result.size() == mutect3DatasetMode.getNumReadFeatures(), "Wrong number of features");
 
