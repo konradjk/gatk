@@ -161,6 +161,7 @@ public class FeaturizedReadSets {
                 } else if (distanceFromVariant <= 50) {
                     featuresToAddTo = featuresWithin50Bases;
                 } else {
+                    asm.stepForwardOnGenome();
                     continue;
                 }
 
