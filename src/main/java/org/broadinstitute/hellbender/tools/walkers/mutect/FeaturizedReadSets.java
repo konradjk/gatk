@@ -168,7 +168,7 @@ public class FeaturizedReadSets {
 
         Utils.validate(result.size() == mutect3DatasetMode.getNumReadFeatures(), "Wrong number of features");
 
-        final String encodingAroundVariant = encodeVicinityOfVariant(read, vc, haplotype.getBases(),
+        final String encodingAroundVariant = encodeVicinityOfVariant(copy, vc, haplotype.getBases(),
                 readStartInHaplotype, PADDING);
 
         return Pair.of(result, encodingAroundVariant);
