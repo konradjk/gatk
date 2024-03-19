@@ -142,12 +142,12 @@ public class FeaturizedReadSets {
 
             final int readStartInHaplotype = readToHaplotypeAlignment.getAlignmentOffset();
             final AlignmentStateMachine asm = new AlignmentStateMachine(copy);
+            asm.stepForwardOnGenome();
             final int[] featuresWithin5Bases = new int[5];
             final int[] featuresWithin10Bases = new int[5];
             final int[] featuresWithin25Bases = new int[5];
             final int[] featuresWithin50Bases = new int[5];
             while (!asm.isRightEdge()) {
-                asm.stepForwardOnGenome();
                 final PileupElement pe = asm.makePileupElement();
                 final int distanceFromVariant = Math.abs(asm.getReadOffset() - readPositionOfVariantStart);
 
@@ -185,6 +185,7 @@ public class FeaturizedReadSets {
                         featuresToAddTo[4]++;
                     }
                 }
+                asm.stepForwardOnGenome();
             }
             for (final int[] featuresToAdd : List.of(featuresWithin5Bases, featuresWithin10Bases, featuresWithin25Bases, featuresWithin50Bases)) {
                 for (final int val : featuresToAdd) {
